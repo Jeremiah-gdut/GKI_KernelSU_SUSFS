@@ -160,24 +160,46 @@ jobs:
 
           path = Path('.github/workflows/scripts/kernel_builder.py')
           text = path.read_text()
+
           text = text.replace(
               'self._run_cmd(f"$REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest "\n'
               '                     f"-b common-{formatted_branch} --repo-rev=v2.16", check=False)',
               'self._run_cmd(f"$REPO init --depth=1 -u https://android.googlesource.com/kernel/manifest "\n'
               '                     f"-b common-{formatted_branch}", check=True)'
           )
+
           text = text.replace(
               'self._run_cmd("$REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast", check=False)',
               'self._run_cmd("$REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast --no-clone-bundle", check=True)'
           )
+
           text = text.replace(
               'result = self._run_cmd("LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC=\\"/usr/bin/ccache clang\\"", check=False)',
               'result = self._run_cmd("LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh", check=False)'
           )
+
+          text = text.replace(
+              '            self.init_and_sync_kernel()\n'
+              '            self.add_kernel_supatch()',
+              '            self.init_and_sync_kernel()\n'
+              '            key_h = self.work_dir / "common/include/linux/key.h"\n'
+              '            if key_h.exists():\n'
+              '                key_h_content = key_h.read_text()\n'
+              '                if "#include <linux/assoc_array.h>" not in key_h_content:\n'
+              '                    marker = "#include <linux/rcupdate.h>"\n'
+              '                    if marker in key_h_content:\n'
+              '                        key_h_content = key_h_content.replace(marker, marker + "\\\\n#include <linux/assoc_array.h>", 1)\n'
+              '                    else:\n'
+              '                        key_h_content = "#include <linux/assoc_array.h>\\\\n" + key_h_content\n'
+              '                    key_h.write_text(key_h_content)\n'
+              '                    logger.info("已修复 key.h 缺少 linux/assoc_array.h include")\n'
+              '            self.add_kernel_supatch()'
+          )
+
           path.write_text(text)
           PY
 
-          grep -n "repo init\|repo.*sync" .github/workflows/scripts/kernel_builder.py
+          grep -n "repo init\|repo.*sync\|build/build.sh\|assoc_array" .github/workflows/scripts/kernel_builder.py
 
       - name: Build kernel
         run: |
@@ -200,7 +222,7 @@ jobs:
           [ -z "${{ github.event.inputs.custom_version }}" ] || ARGS="$ARGS --custom-version=${{ github.event.inputs.custom_version }}"
           [ "${{ github.event.inputs.make_release }}" = "true" ] || ARGS="$ARGS --no-release"
 
-          python3 build.py $ARGS 2>&1 | tee ../../kernel-build.log
+          python3 build.py $ARGS 2>&1 | tee ../../../kernel-build.log
           
       - name: Upload build log
         if: always()
