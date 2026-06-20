@@ -131,7 +131,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update && sudo apt upgrade -y
-          sudo apt install -y ccache python3 git curl wget zip unzip
+          sudo apt install -y \
+            bc bison build-essential ccache cpio curl flex git \
+            libelf-dev libssl-dev lld llvm make python3 rsync unzip wget zip \
+            dwarves lz4
           pip install PyYAML
 
       - name: Configure ccache
@@ -167,6 +170,10 @@ jobs:
               'self._run_cmd("$REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast", check=False)',
               'self._run_cmd("$REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast --no-clone-bundle", check=True)'
           )
+          text = text.replace(
+              'result = self._run_cmd("LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC=\\"/usr/bin/ccache clang\\"", check=False)',
+              'result = self._run_cmd("LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh", check=False)'
+          )
           path.write_text(text)
           PY
 
@@ -193,8 +200,15 @@ jobs:
           [ -z "${{ github.event.inputs.custom_version }}" ] || ARGS="$ARGS --custom-version=${{ github.event.inputs.custom_version }}"
           [ "${{ github.event.inputs.make_release }}" = "true" ] || ARGS="$ARGS --no-release"
 
-          python3 build.py $ARGS
-
+          python3 build.py $ARGS 2>&1 | tee ../../kernel-build.log
+          
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kernel-build-log
+          path: kernel-build.log
+          
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
