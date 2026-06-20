@@ -99,6 +99,13 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
 
     ZRAM_CONFIG_5_10 = "CONFIG_ZSMALLOC=y\nCONFIG_ZRAM=y\nCONFIG_MODULE_SIG=n\nCONFIG_CRYPTO_LZO=y\nCONFIG_ZRAM_DEF_COMP_LZ4KD=y\n"
     ZRAM_CONFIG_COMMON = "CONFIG_CRYPTO_LZ4HC=y\nCONFIG_CRYPTO_LZ4K=y\nCONFIG_CRYPTO_LZ4KD=y\nCONFIG_CRYPTO_842=y\nCONFIG_CRYPTO_LZ4K_OPLUS=y\nCONFIG_ZRAM_WRITEBACK=y\n"
+    ANDROID12_510_SUBLEVEL_PATCH = {
+        "136": "2022-11",
+        "198": "2024-01",
+        "209": "2024-05",
+        "236": "2025-05",
+        "X": "lts",
+    }
 
     def __init__(self, config: BuildConfig, workspace: str):
         self.config = config
@@ -191,17 +198,35 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         logger.info("=== 初始化和同步内核源代码 ===")
         self._chdir(self.work_dir)
         formatted_branch = self.config.formatted_branch
+        manifest_branches = [formatted_branch]
 
-        self._run_cmd(f"$REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest "
-                     f"-b common-{formatted_branch} --repo-rev=v2.16", check=False)
+        if self.config.android_version == "android12" and self.config.kernel_version == "5.10":
+            fallback_patch = self.ANDROID12_510_SUBLEVEL_PATCH.get(self.config.sub_level)
+            if fallback_patch:
+                fallback_branch = f"{self.config.android_version}-{self.config.kernel_version}-{fallback_patch}"
+                if fallback_branch not in manifest_branches:
+                    manifest_branches.append(fallback_branch)
 
-        remote = subprocess.run(f"git ls-remote https://android.googlesource.com/kernel/common {formatted_branch}",
+        selected_branch = None
+        for branch in manifest_branches:
+            result = self._run_cmd(f"$REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest "
+                                  f"-b common-{branch} --repo-rev=v2.16", check=False)
+            if result.returncode == 0:
+                selected_branch = branch
+                if branch != formatted_branch:
+                    logger.warning(f"common-{formatted_branch} 不存在，回退到 common-{branch}")
+                break
+
+        if selected_branch is None:
+            raise RuntimeError(f"repo init 失败，找不到可用分支: {', '.join(f'common-{b}' for b in manifest_branches)}")
+
+        remote = subprocess.run(f"git ls-remote https://android.googlesource.com/kernel/common {selected_branch}",
                                shell=True, capture_output=True, text=True).stdout.strip()
         if "deprecated" in remote:
             manifest_path = self.work_dir / ".repo/manifests/default.xml"
             with open(manifest_path, "r") as f:
                 content = f.read()
-            content = content.replace(f'"{formatted_branch}"', f'"deprecated/{formatted_branch}"')
+            content = content.replace(f'"{selected_branch}"', f'"deprecated/{selected_branch}"')
             with open(manifest_path, "w") as f:
                 f.write(content)
 
