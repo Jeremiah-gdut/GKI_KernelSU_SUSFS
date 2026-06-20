@@ -150,6 +150,28 @@ jobs:
           restore-keys: |
             ${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}-${{ github.event.inputs.sub_level }}-ccache-
 
+      - name: Patch repo sync behavior
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/scripts/kernel_builder.py')
+          text = path.read_text()
+          text = text.replace(
+              'self._run_cmd(f"$REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest "\n'
+              '                     f"-b common-{formatted_branch} --repo-rev=v2.16", check=False)',
+              'self._run_cmd(f"$REPO init --depth=1 -u https://android.googlesource.com/kernel/manifest "\n'
+              '                     f"-b common-{formatted_branch}", check=True)'
+          )
+          text = text.replace(
+              'self._run_cmd("$REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast", check=False)',
+              'self._run_cmd("$REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast --no-clone-bundle", check=True)'
+          )
+          path.write_text(text)
+          PY
+
+          grep -n "repo init\|repo.*sync" .github/workflows/scripts/kernel_builder.py
+
       - name: Build kernel
         run: |
           cd ./.github/workflows/scripts
