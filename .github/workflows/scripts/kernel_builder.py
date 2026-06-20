@@ -215,6 +215,36 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         self._apply_legacy_fixes(remote)
         logger.info("=== 内核源代码同步完成 ===")
 
+    def _fix_assoc_array_header(self):
+        """修复 5.10 key.h 缺少 assoc_array.h 导致 struct assoc_array incomplete type 的问题"""
+        key_h = self.work_dir / "common/include/linux/key.h"
+
+        if not key_h.exists():
+            logger.warning(f"key.h 不存在，跳过 assoc_array 修复: {key_h}")
+            return
+
+        content = key_h.read_text()
+
+        if "#include <linux/assoc_array.h>" in content:
+            logger.info("key.h 已包含 linux/assoc_array.h，跳过")
+            return
+
+        anchors = [
+            "#include <linux/rcupdate.h>",
+            "#include <linux/rwsem.h>",
+            "#include <linux/list.h>",
+        ]
+
+        for anchor in anchors:
+            if anchor in content:
+                content = content.replace(anchor, anchor + "\n#include <linux/assoc_array.h>", 1)
+                break
+        else:
+            content = "#include <linux/assoc_array.h>\n" + content
+
+        key_h.write_text(content)
+        logger.info("已修复 key.h 缺少 linux/assoc_array.h include")
+      
     def _apply_legacy_fixes(self, remote_branch: str = ""):
         av, kv = self.config.android_version, self.config.kernel_version
         sub = self.config.get_sub_level_int()
@@ -575,7 +605,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         try:
             if (self.work_dir / "build/build.sh").exists():
                 logger.info("使用旧版构建方式...")
-                result = self._run_cmd("LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC=\"/usr/bin/ccache clang\"", check=False)
+                result = self._run_cmd("LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh", check=False)
             else:
                 logger.info("使用 Bazel 构建方式...")
                 result = self._run_cmd("tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --lto=thin //common:kernel_aarch64_dist", check=False)
@@ -706,6 +736,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
             self.apply_sukisu_patches()
             self.apply_zram_patches()
             self.apply_task_mmu_fixes()
+            self._fix_assoc_array_header()
             self.configure_kernel()
             self.configure_kernel_name()
             self.show_kernel_config()
