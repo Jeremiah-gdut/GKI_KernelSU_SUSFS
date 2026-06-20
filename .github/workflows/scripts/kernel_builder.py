@@ -309,7 +309,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         with open(key_header, "r") as f:
             content = f.read()
 
-        has_assoc_array_usage = bool(re.search(r"struct\s+assoc_array\s+keys\s*;", content))
+        has_assoc_array_usage = bool(re.search(r"struct\s+assoc_array\s+\w+\s*;", content))
         has_assoc_array_include = bool(re.search(r"#include\s*<linux/assoc_array\.h>", content))
         if not has_assoc_array_usage or has_assoc_array_include:
             return
@@ -321,11 +321,12 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
 
         for i, line in enumerate(lines):
             stripped_line = line.strip()
-            if re.match(r"^#include\s*<linux/keyctl\.h>$", stripped_line):
+            if re.search(r"#include\s*<linux/keyctl\.h>$", stripped_line):
                 insert_index = i + 1
                 break
 
         if insert_index is None:
+            # Fallback: insert after the first #include line.
             for i, line in enumerate(lines):
                 if re.match(r"^\s*#include\s*<", line):
                     insert_index = i + 1
