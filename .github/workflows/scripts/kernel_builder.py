@@ -602,6 +602,55 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         logger.info("=== 开始编译内核 ===")
         self._chdir(self.work_dir)
 
+        print("=== FORCE FIX key.h assoc_array START ===", flush=True)
+
+        key_h = self.work_dir / "common/include/linux/key.h"
+        assoc_h = self.work_dir / "common/include/linux/assoc_array.h"
+
+        print(f"key_h={key_h}, exists={key_h.exists()}", flush=True)
+        print(f"assoc_h={assoc_h}, exists={assoc_h.exists()}", flush=True)
+
+        if not key_h.exists():
+            raise RuntimeError(f"key.h 不存在: {key_h}")
+
+        content = key_h.read_text()
+
+        # 清理之前可能误写入的字面量 \n#include
+        content = content.replace("\\n#include <linux/assoc_array.h>", "")
+        content = content.replace("#include <linux/assoc_array.h>\n", "")
+        content = content.replace("#include <linux/assoc_array.h>", "")
+
+        include_line = "#include <linux/assoc_array.h>"
+
+        anchors = [
+            "#include <linux/rcupdate.h>",
+            "#include <linux/rwsem.h>",
+            "#include <linux/list.h>",
+            "#include <linux/types.h>",
+        ]
+
+        for anchor in anchors:
+            if anchor in content:
+                content = content.replace(anchor, anchor + "\n" + include_line, 1)
+                break
+        else:
+            content = include_line + "\n" + content
+
+        key_h.write_text(content)
+
+        print("=== key.h assoc_array after patch ===", flush=True)
+        for i, line in enumerate(key_h.read_text().splitlines(), 1):
+            if "assoc_array" in line or "rcupdate" in line:
+                print(f"{i}: {line!r}", flush=True)
+
+        if "\\n#include <linux/assoc_array.h>" in key_h.read_text():
+            raise RuntimeError("key.h 里仍存在错误的字面量 \\\\n#include")
+
+        if "#include <linux/assoc_array.h>" not in key_h.read_text():
+            raise RuntimeError("key.h 没有成功写入 assoc_array.h include")
+
+        print("=== FORCE FIX key.h assoc_array DONE ===", flush=True)
+
         build_config = self.work_dir / "common/build.config.gki.aarch64"
         if build_config.exists():
             with open(build_config, "r") as f:
@@ -745,7 +794,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
             self.apply_sukisu_patches()
             self.apply_zram_patches()
             self.apply_task_mmu_fixes()
-            self._fix_assoc_array_header()
+            # self._fix_assoc_array_header()
             self.configure_kernel()
             self.configure_kernel_name()
             self.show_kernel_config()
