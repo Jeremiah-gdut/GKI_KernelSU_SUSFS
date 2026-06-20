@@ -301,6 +301,25 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
                 self._run_cmd(f"patch -p1 --fuzz=3 < {patch_file}", check=False)
                 self._chdir(self.work_dir)
 
+    def fix_key_header_assoc_array_include(self):
+        key_header = self.work_dir / "common/include/linux/key.h"
+        if not key_header.exists():
+            return
+
+        with open(key_header, "r") as f:
+            content = f.read()
+
+        if "struct assoc_array keys;" not in content or "#include <linux/assoc_array.h>" in content:
+            return
+
+        if "#include <linux/keyctl.h>" in content:
+            content = content.replace("#include <linux/keyctl.h>", "#include <linux/keyctl.h>\n#include <linux/assoc_array.h>", 1)
+        else:
+            content = re.sub(r'(#include <[^>]+>\n)', r'\1#include <linux/assoc_array.h>\n', content, count=1)
+
+        with open(key_header, "w") as f:
+            f.write(content)
+
     def apply_sukisu_patches(self):
         logger.info("=== 应用 SukiSU 补丁 ===")
         self._chdir(self.work_dir / "common")
@@ -705,6 +724,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
             self.apply_susfs_patches()
             self.apply_sukisu_patches()
             self.apply_zram_patches()
+            self.fix_key_header_assoc_array_include()
             self.apply_task_mmu_fixes()
             self.configure_kernel()
             self.configure_kernel_name()
