@@ -225,25 +225,34 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
 
         content = key_h.read_text()
 
-        if "#include <linux/assoc_array.h>" in content:
-            logger.info("key.h 已包含 linux/assoc_array.h，跳过")
-            return
+        # 清理之前 workflow 误写入的字面量 \n#include
+        content = content.replace("\\n#include <linux/assoc_array.h>", "")
+        content = content.replace("#include <linux/assoc_array.h>\n", "")
+        content = content.replace("#include <linux/assoc_array.h>", "")
+
+        include_line = "#include <linux/assoc_array.h>"
 
         anchors = [
             "#include <linux/rcupdate.h>",
             "#include <linux/rwsem.h>",
             "#include <linux/list.h>",
+            "#include <linux/types.h>",
         ]
 
         for anchor in anchors:
             if anchor in content:
-                content = content.replace(anchor, anchor + "\n#include <linux/assoc_array.h>", 1)
+                content = content.replace(anchor, anchor + "\n" + include_line, 1)
                 break
         else:
-            content = "#include <linux/assoc_array.h>\n" + content
+            content = include_line + "\n" + content
 
         key_h.write_text(content)
-        logger.info("已修复 key.h 缺少 linux/assoc_array.h include")
+
+        logger.info("已强制修复 key.h: 添加真正的 #include <linux/assoc_array.h>")
+        self._run_cmd(
+            "grep -n \"linux/assoc_array.h\\|struct assoc_array\" common/include/linux/key.h | head -30",
+            check=False,
+        )
       
     def _apply_legacy_fixes(self, remote_branch: str = ""):
         av, kv = self.config.android_version, self.config.kernel_version
