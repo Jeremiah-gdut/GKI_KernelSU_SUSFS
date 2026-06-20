@@ -178,24 +178,6 @@ jobs:
               'result = self._run_cmd("LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh", check=False)'
           )
 
-          text = text.replace(
-              '            self.init_and_sync_kernel()\n'
-              '            self.add_kernel_supatch()',
-              '            self.init_and_sync_kernel()\n'
-              '            key_h = self.work_dir / "common/include/linux/key.h"\n'
-              '            if key_h.exists():\n'
-              '                key_h_content = key_h.read_text()\n'
-              '                if "#include <linux/assoc_array.h>" not in key_h_content:\n'
-              '                    marker = "#include <linux/rcupdate.h>"\n'
-              '                    if marker in key_h_content:\n'
-              '                        key_h_content = key_h_content.replace(marker, marker + "\\\\n#include <linux/assoc_array.h>", 1)\n'
-              '                    else:\n'
-              '                        key_h_content = "#include <linux/assoc_array.h>\\\\n" + key_h_content\n'
-              '                    key_h.write_text(key_h_content)\n'
-              '                    logger.info("已修复 key.h 缺少 linux/assoc_array.h include")\n'
-              '            self.add_kernel_supatch()'
-          )
-
           path.write_text(text)
           PY
 
