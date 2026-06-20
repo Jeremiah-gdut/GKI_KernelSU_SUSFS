@@ -309,16 +309,32 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         with open(key_header, "r") as f:
             content = f.read()
 
-        if "struct assoc_array keys;" not in content or "#include <linux/assoc_array.h>" in content:
+        if not re.search(r"struct\s+assoc_array\s+keys\s*;", content) or "#include <linux/assoc_array.h>" in content:
             return
 
-        if "#include <linux/keyctl.h>" in content:
-            content = content.replace("#include <linux/keyctl.h>", "#include <linux/keyctl.h>\n#include <linux/assoc_array.h>", 1)
+        line_ending = "\r\n" if "\r\n" in content else "\n"
+        include_line = f"#include <linux/assoc_array.h>{line_ending}"
+        lines = content.splitlines(keepends=True)
+        insert_index = None
+
+        for i, line in enumerate(lines):
+            if line.strip() == "#include <linux/keyctl.h>":
+                insert_index = i + 1
+                break
+
+        if insert_index is None:
+            for i, line in enumerate(lines):
+                if line.lstrip().startswith("#include <"):
+                    insert_index = i + 1
+                    break
+
+        if insert_index is None:
+            lines.insert(0, include_line)
         else:
-            content = re.sub(r'(#include <[^>]+>\n)', r'\1#include <linux/assoc_array.h>\n', content, count=1)
+            lines.insert(insert_index, include_line)
 
         with open(key_header, "w") as f:
-            f.write(content)
+            f.write("".join(lines))
 
     def apply_sukisu_patches(self):
         logger.info("=== 应用 SukiSU 补丁 ===")
