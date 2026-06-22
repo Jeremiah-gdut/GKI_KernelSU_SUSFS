@@ -344,6 +344,47 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
                 self._run_cmd(f"patch -p1 --fuzz=3 < {patch_file}", check=False)
                 self._chdir(self.work_dir)
 
+    def fix_key_header_assoc_array_include(self):
+        key_header = self.work_dir / "common/include/linux/key.h"
+        if not key_header.exists():
+            return
+
+        with open(key_header, "r") as f:
+            content = f.read()
+
+        has_assoc_array_usage = re.search(r"struct\s+assoc_array\b", content)
+        has_assoc_array_include = re.search(r"#include\s*<linux/assoc_array\.h>", content)
+        if not has_assoc_array_usage or has_assoc_array_include:
+            return
+
+        line_ending = "\r\n" if "\r\n" in content else "\n"
+        include_line = f"#include <linux/assoc_array.h>{line_ending}"
+        lines = content.splitlines(keepends=True)
+        insert_index = None
+        keyctl_include_pattern = re.compile(r"#include\s*<linux/keyctl\.h>")
+        include_line_pattern = re.compile(r"^\s*#include\s*<")
+
+        for i, line in enumerate(lines):
+            stripped_line = line.strip()
+            if keyctl_include_pattern.search(stripped_line):
+                insert_index = i + 1
+                break
+
+        if insert_index is None:
+            # Fallback: insert after the first #include line.
+            for i, line in enumerate(lines):
+                if include_line_pattern.match(line):
+                    insert_index = i + 1
+                    break
+
+        if insert_index is None:
+            lines.insert(0, include_line)
+        else:
+            lines.insert(insert_index, include_line)
+
+        with open(key_header, "w") as f:
+            f.write("".join(lines))
+
     def apply_sukisu_patches(self):
         logger.info("=== 应用 SukiSU 补丁 ===")
         self._chdir(self.work_dir / "common")
@@ -797,6 +838,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
             self.apply_susfs_patches()
             self.apply_sukisu_patches()
             self.apply_zram_patches()
+            self.fix_key_header_assoc_array_include()
             self.apply_task_mmu_fixes()
             # self._fix_assoc_array_header()
             self.configure_kernel()
